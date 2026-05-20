@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Standard Chess with CSS Promotion Modal</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #2f3542;
+            color: #ffffff;
+        }
+        h1 { margin-bottom: 5px; }
+        #status {
+            font-size: 1.2rem;
+            margin-bottom: 15px;
+            font-weight: bold;
+            padding: 5px 15px;
+            border-radius: 4px;
+        }
+        .status-normal { color: #ffffff; }
+        .status-check { color: #ffa502; background-color: rgba(255, 165, 2, 0.1); }
+        .status-mate { color: #ff4757; background-color: rgba(255, 71, 87, 0.2); }
+        
+        #board {
+            display: grid;
+            grid-template-columns: repeat(8, 70px);
+            grid-template-rows: repeat(8, 70px);
+            border: 4px solid #1e222b;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+        }
+        .square {
+            width: 70px;
+            height: 70px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 3rem;
+            cursor: pointer;
+            user-select: none;
+        }
+        
+        /* Board Colors */
+        .light { background-color: #f0d9b5; }
+        .dark { background-color: #b58863; }
+        
+        /* Explicit Piece Colors */
+        .white-piece {
+            color: #ffffff;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
+        }
+        .black-piece {
+            color: #1e1e1e;
+            text-shadow: 0 1px 3px rgba(255, 255, 255, 0.4);
+        }
+
+        .selected { background-color: #7ab87d !important; }
+        .highlight { position: relative; }
+        .highlight::before {
+            content: '';
+            width: 20px;
+            height: 20px;
+            background-color: rgba(0, 0, 0, 0.2);
+            border-radius: 50%;
+            position: absolute;
+        }
+
+        /* --- NEW CSS PROMOTION MODAL STYLES --- */
+        #promotion-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.75);
+            display: none; /* Toggled via JS */
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        #promotion-modal {
+            background-color: #3f4756;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 15px 30px rgba(0,0,0,0.7);
+            text-align: center;
+            border: 3px solid #1e222b;
+        }
+        #promotion-modal h3 {
+            margin-top: 0;
+            margin-bottom: 15px;
+            font-size: 1.2rem;
+            letter-spacing: 0.5px;
+        }
+        #promotion-options {
+            display: flex;
+            gap: 15px;
+        }
+        .promotion-btn {
+            width: 75px;
+            height: 75px;
+            background-color: #f0d9b5;
+            border: 3px solid #b58863;
+            border-radius: 8px;
+            font-size: 3rem;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .promotion-btn:hover {
+            background-color: #7ab87d;
+            border-color: #4d8a50;
+            transform: translateY(-3px);
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Chess</h1>
+    <div id="status" class="status-normal">White's Turn</div>
+    <div id="board"></div>
+
+    <div id="promotion-overlay">
+        <div id="promotion-modal">
+            <h3>Promote Your Pawn</h3>
+            <div id="promotion-options"></div>
+        </div>
+    </div>
+
+    <script>
+        const boardElement = document.getElementById('board');
+        const statusElement = document.getElementById('status');
+        const promotionOverlay = document.getElementById('promotion-overlay');
+        const promotionOptionsContainer = document.getElementById('promotion-options');
+
+        let board = [
+            ['♜', '♞', '♝', '♛', '♚', '♝', '♞', '♜'], 
+            ['♟', '♟', '♟', '♟', '♟', '♟', '♟', '♟'], 
+            ['', '', '', '', '', '', '', ''],
+            ['', '', '', '', '', '', '', ''],
+            ['', '', '', '', '', '', '', ''],
+            ['', '', '', '', '', '', '', ''],
+            ['♙', '♙', '♙', '♙', '♙', '♙', '♙', '♙'], 
+            ['♖', '♘', '♗', '♕', '♔', '♗', '♘', '♖']  
+        ];
+
+        let turn = 'white'; 
+        let selectedPiece = null; 
+        let gameOver = false;
+        let pendingPromotion = null; // Tracks {row, col} during choice selection
+
+        const whitePieces = ['♙', '♖', '♘', '♗', '♕', '♔'];
+        const blackPieces = ['♟', '♜', '♞', '♝', '♛', '♚'];
+
+        function createBoard() {
+            boardElement.innerHTML = '';
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const square = document.createElement('div');
+                    square.classList.add('square');
+                    square.classList.add((r + c) % 2 === 0 ? 'light' : 'dark');
+                    square.dataset.row = r;
+                    square.dataset.col = c;
+                    
+                    const piece = board[r][c];
+                    square.textContent = piece;
+                    
+                    if (whitePieces.includes(piece)) {
+                        square.classList.add('white-piece');
+                    } else if (blackPieces.includes(piece)) {
+                        square.classList.add('black-piece');
+                    }
+                    
+                    square.addEventListener('click', handleSquareClick);
+                    boardElement.appendChild(square);
+                }
+            }
+        }
+
+        function handleSquareClick(e) {
+            if (gameOver || pendingPromotion) return; // Freeze board during promotion selection
+
+            const row = parseInt(e.target.dataset.row);
+            const col = parseInt(e.target.dataset.col);
+            const piece = board[row][col];
+
+            if (selectedPiece) {
+                if (selectedPiece.row === row && selectedPiece.col === col) {
+                    clearHighlights();
+                    selectedPiece = null;
+                } else if (isLegalMove(selectedPiece.row, selectedPiece.col, row, col, board)) {
+                    // Execute move
+                    board[row][col] = board[selectedPiece.row][selectedPiece.col];
+                    board[selectedPiece.row][selectedPiece.col] = '';
+                    
+                    const currentMovedPiece = board[row][col];
+                    
+                    selectedPiece = null;
+                    clearHighlights();
+                    createBoard(); // Render the pawn on its target square first
+                    
+                    // Check if the move triggers a promotion state
+                    if ((currentMovedPiece === '♙' && row === 0) || (currentMovedPiece === '♟' && row === 7)) {
+                        handlePromotionModal(row, col, turn);
+                    } else {
+                        // Regular move workflow continues
+                        turn = turn === 'white' ? 'black' : 'white';
+                        updateGameStatus();
+                    }
+                } else if (isPieceOfCurrentTurn(piece)) {
+                    clearHighlights();
+                    selectedPiece = { row, col };
+                    e.target.classList.add('selected');
+                    highlightValidMoves(row, col);
+                }
+            } else {
+                if (isPieceOfCurrentTurn(piece)) {
+                    selectedPiece = { row, col };
+                    e.target.classList.add('selected');
+                    highlightValidMoves(row, col);
+                }
+            }
+        }
+
+        // --- NEW MODAL PROMOTION FUNCTIONALITY ---
+        function handlePromotionModal(row, col, playerColor) {
+            pendingPromotion = { row, col };
+            promotionOptionsContainer.innerHTML = ''; // Clear previous elements
+            
+            // Define options map matching target alignment colors
+            const options = playerColor === 'white' 
+                ? [ { symbol: '♕', style: 'white-piece' }, { symbol: '♖', style: 'white-piece' }, { symbol: '♗', style: 'white-piece' }, { symbol: '♘', style: 'white-piece' } ]
+                : [ { symbol: '♛', style: 'black-piece' }, { symbol: '♜', style: 'black-piece' }, { symbol: '♝', style: 'black-piece' }, { symbol: '♞', style: 'black-piece' } ];
+
+            options.forEach(opt => {
+                const button = document.createElement('div');
+                button.classList.add('promotion-btn', opt.style);
+                button.textContent = opt.symbol;
+                
+                button.addEventListener('click', () => {
+                    board[row][col] = opt.symbol; // Transform piece
+                    
+                    // Hide Modal & Release Board State
+                    promotionOverlay.style.display = 'none';
+                    pendingPromotion = null;
+                    
+                    // Finalize turn loop cleanly
+                    turn = turn === 'white' ? 'black' : 'white';
+                    createBoard();
+                    updateGameStatus();
+                });
+                
+                promotionOptionsContainer.appendChild(button);
+            });
+
+            // Reveal Overlay Menu layout
+            promotionOverlay.style.display = 'flex';
+        }
+
+        function isPieceOfCurrentTurn(piece) {
+            if (turn === 'white' && whitePieces.includes(piece)) return true;
+            if (turn === 'black' && blackPieces.includes(piece)) return true;
+            return false;
+        }
+
+        function getPieceColor(piece) {
+            if (whitePieces.includes(piece)) return 'white';
+            if (blackPieces.includes(piece)) return 'black';
+            return null;
+        }
+
+        function clearHighlights() {
+            const squares = document.querySelectorAll('.square');
+            squares.forEach(sq => {
+                sq.classList.remove('selected');
+                sq.classList.remove('highlight');
+            });
+        }
+
+        function highlightValidMoves(fromR, fromC) {
+            const squares = document.querySelectorAll('.square');
+            squares.forEach(sq => {
+                const toR = parseInt(sq.dataset.row);
+                const toC = parseInt(sq.dataset.col);
+                if (isLegalMove(fromR, fromC, toR, toC, board)) {
+                    sq.classList.add('highlight');
+                }
+            });
+        }
+
+        function isValidMove(fromR, fromC, toR, toC, currentBoard) {
+            const piece = currentBoard[fromR][fromC];
+            const target = currentBoard[toR][toC];
+
+            if (target && getPieceColor(piece) === getPieceColor(target)) return false;
+
+            const dr = toR - fromR;
+            const dc = toC - fromC;
+            const absDr = Math.abs(dr);
+            const absDc = Math.abs(dc);
+
+            switch (piece) {
+                case '♙': 
+                    if (dc === 0 && target === '') {
+                        if (dr === -1) return true;
+                        if (fromR === 6 && dr === -2 && currentBoard[5][fromC] === '') return true;
+                    }
+                    if (dr === -1 && absDc === 1 && target !== '') return true;
+                    return false;
+
+                case '♟': 
+                    if (dc === 0 && target === '') {
+                        if (dr === 1) return true;
+                        if (fromR === 1 && dr === 2 && currentBoard[2][fromC] === '') return true;
+                    }
+                    if (dr === 1 && absDc === 1 && target !== '') return true;
+                    return false;
+
+                case '♞': case '♘': 
+                    return (absDr === 2 && absDc === 1) || (absDr === 1 && absDc === 2);
+
+                case '♝': case '♗': 
+                    if (absDr !== absDc) return false;
+                    return isPathClear(fromR, fromC, toR, toC, currentBoard);
+
+                case '♜': case '♖': 
+                    if (dr !== 0 && dc !== 0) return false;
+                    return isPathClear(fromR, fromC, toR, toC, currentBoard);
+
+                case '♛': case '♕': 
+                    if (absDr !== absDc && dr !== 0 && dc !== 0) return false;
+                    return isPathClear(fromR, fromC, toR, toC, currentBoard);
+
+                case '♚': case '♔': 
+                    return absDr <= 1 && absDc <= 1;
+            }
+            return false;
+        }
+
+        function isPathClear(fromR, fromC, toR, toC, currentBoard) {
+            const stepR = Math.sign(toR - fromR);
+            const stepC = Math.sign(toC - fromC);
+            let r = fromR + stepR;
+            let c = fromC + stepC;
+
+            while (r !== toR || c !== toC) {
+                if (currentBoard[r][c] !== '') return false;
+                r += stepR;
+                c += stepC;
+            }
+            return true;
+        }
+
+        function findKing(color, currentBoard) {
+            const targetKing = color === 'white' ? '♔' : '♚';
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    if (currentBoard[r][c] === targetKing) return { row: r, col: c };
+                }
+            }
+            return null;
+        }
+
+        function isInCheck(color, currentBoard) {
+            const kingPos = findKing(color, currentBoard);
+            if (!kingPos) return false;
+
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    const piece = currentBoard[r][c];
+                    if (piece && getPieceColor(piece) !== color) {
+                        if (isValidMove(r, c, kingPos.row, kingPos.col, currentBoard)) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        function isLegalMove(fromR, fromC, toR, toC, currentBoard) {
+            const piece = currentBoard[fromR][fromC];
+            if (!isValidMove(fromR, fromC, toR, toC, currentBoard)) return false;
+
+            const localBoard = currentBoard.map(row => [...row]);
+            localBoard[toR][toC] = localBoard[fromR][fromC];
+            localBoard[fromR][fromC] = '';
+
+            const color = getPieceColor(piece);
+            return !isInCheck(color, localBoard);
+        }
+
+        function hasLegalMoves(color) {
+            for (let r = 0; r < 8; r++) {
+                for (let c = 0; c < 8; c++) {
+                    if (getPieceColor(board[r][c]) === color) {
+                        for (let toR = 0; toR < 8; toR++) {
+                            for (let toC = 0; toC < 8; toC++) {
+                                if (isLegalMove(r, c, toR, toC, board)) {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+
+        function updateGameStatus() {
+            const activeColorDisplay = turn.charAt(0).toUpperCase() + turn.slice(1);
+            const checkingStatus = isInCheck(turn, board);
+            const legalMovesExist = hasLegalMoves(turn);
+
+            if (checkingStatus && !legalMovesExist) {
+                gameOver = true;
+                const winner = turn === 'white' ? 'Black' : 'White';
+                statusElement.textContent = `Checkmate! ${winner} Wins!`;
+                statusElement.className = "status-mate";
+            } else if (!checkingStatus && !legalMovesExist) {
+                gameOver = true;
+                statusElement.textContent = "Draw by Stalemate!";
+                statusElement.className = "status-normal";
+            } else if (checkingStatus) {
+                statusElement.textContent = `${activeColorDisplay} is in Check!`;
+                statusElement.className = "status-check";
+            } else {
+                statusElement.textContent = `${activeColorDisplay}'s Turn`;
+                statusElement.className = "status-normal";
+            }
+        }
+
+        createBoard();
+    </script>
+</body>
+</html>
